@@ -1,0 +1,116 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+class Box;  // предварительное объявление
+
+class Ball {
+private:
+    string color;
+    Box* box;  // nullptr, если шарик не в коробке
+
+public:
+    Ball(const string& color) : color(color), box(nullptr) {}
+
+    string getColor() const { return color; }
+    Box* getBox() const { return box; }
+    void setBox(Box* b) { box = b; }
+
+    // шарик "отвечает", в коробке ли он, если да - в какой
+    void printLocation() const;
+};
+
+class Box {
+private:
+    string name;
+    vector<Ball*> balls;
+
+public:
+    Box(const string& name) : name(name) {}
+
+    string getName() const { return name; }
+
+    // положить шарик в коробку (если он лежал в другой - достаём оттуда)
+    void addBall(Ball* ball) {
+        if (ball->getBox() != nullptr) {
+            ball->getBox()->removeBall(ball);
+        }
+        balls.push_back(ball);
+        ball->setBox(this);
+    }
+
+    void removeBall(Ball* ball) {
+        auto it = find(balls.begin(), balls.end(), ball);
+        if (it != balls.end()) {
+            balls.erase(it);
+            ball->setBox(nullptr);
+        }
+    }
+
+    // коробка "отвечает", какие в ней шарики (цвет)
+    void printBalls() const {
+        cout << "Коробка \"" << name << "\": ";
+        if (balls.empty()) {
+            cout << "пустая";
+        } else {
+            for (size_t i = 0; i < balls.size(); ++i) {
+                if (i > 0) cout << ", ";
+                cout << balls[i]->getColor();
+            }
+        }
+        cout << endl;
+    }
+};
+
+void Ball::printLocation() const {
+    cout << "Шарик (" << color << "): ";
+    if (box == nullptr) {
+        cout << "не в коробке" << endl;
+    } else {
+        cout << "в коробке \"" << box->getName() << "\"" << endl;
+    }
+}
+
+int main() {
+    // несколько шариков
+    Ball red("красный");
+    Ball green("зелёный");
+    Ball blue("синий");
+    Ball yellow("жёлтый");
+    Ball white("белый");
+
+    // несколько коробок
+    Box box1("Большая");
+    Box box2("Маленькая");
+    Box box3("Пустая");
+
+    // распределяем шарики по коробкам (белый остаётся вне коробок)
+    box1.addBall(&red);
+    box1.addBall(&green);
+    box2.addBall(&blue);
+    box2.addBall(&yellow);
+
+    cout << "--- Что лежит в коробках ---" << endl;
+    box1.printBalls();
+    box2.printBalls();
+    box3.printBalls();
+
+    cout << "\n--- Где находятся шарики ---" << endl;
+    red.printLocation();
+    green.printLocation();
+    blue.printLocation();
+    yellow.printLocation();
+    white.printLocation();
+
+    // перекладываем один шарик в другую коробку
+    cout << "\n--- Перекладываем красный шарик в коробку \"Пустая\" ---" << endl;
+    box3.addBall(&red);
+    box1.printBalls();
+    box3.printBalls();
+    red.printLocation();
+
+    return 0;
+}
