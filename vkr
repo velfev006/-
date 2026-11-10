@@ -1,0 +1,219 @@
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+// Цель пользователя
+enum class Goal {
+    LoseWeight, // похудение
+    Maintain,   // поддержание формы
+    GainMass    // набор массы
+};
+
+// Базовая запись трекера (абстрактный класс)
+class Record {
+protected:
+    int day;
+    double calories;
+
+public:
+    Record(int day, double calories) : day(day), calories(calories) {
+    }
+
+    virtual ~Record() {
+    }
+
+    int getDay() const { return day; }
+    double getCalories() const { return calories; }
+
+    virtual string describe() const = 0;
+};
+
+// Приём пищи: увеличивает поступление энергии
+class Meal : public Record {
+    string name;
+    double weight;  // масса порции, г
+    double protein; // белки, г
+    double fat;     // жиры, г
+    double carbs;   // углеводы, г
+
+public:
+    Meal(int day, double calories, const string &name, double weight,
+         double protein, double fat, double carbs)
+        : Record(day, calories), name(name), weight(weight),
+          protein(protein), fat(fat), carbs(carbs) {
+    }
+
+    double getProtein() const { return protein; }
+    double getFat() const { return fat; }
+    double getCarbs() const { return carbs; }
+
+    string describe() const override {
+        return "Приём пищи: " + name + " (" + to_string((int) calories) + " ккал)";
+    }
+};
+
+// Тренировка: увеличивает расход энергии
+class Workout : public Record {
+    string type;
+    int duration; // длительность, мин
+
+public:
+    Workout(int day, double calories, const string &type, int duration)
+        : Record(day, calories), type(type), duration(duration) {
+    }
+
+    int getDuration() const { return duration; }
+
+    string describe() const override {
+        return "Тренировка: " + type + ", " + to_string(duration) + " мин (" +
+               to_string((int) calories) + " ккал)";
+    }
+};
+
+// Пользователь: хранит параметры и владеет своими записями (композиция)
+class User {
+    string name;
+    bool male;
+    int age;
+    double height;   // см
+    double weight;   // кг
+    double activity; // коэффициент K (1,2 – 1,9)
+    Goal goal;
+    vector<Meal> meals;
+    vector<Workout> workouts;
+
+public:
+    User(const string &name, bool male, int age, double height, double weight,
+         double activity, Goal goal)
+        : name(name), male(male), age(age), height(height), weight(weight),
+          activity(activity), goal(goal) {
+    }
+
+    const string &getName() const { return name; }
+    Goal getGoal() const { return goal; }
+
+    void addMeal(const Meal &meal) { meals.push_back(meal); }
+    void addWorkout(const Workout &workout) { workouts.push_back(workout); }
+
+    // BMR = 10·m + 6,25·h − 5·a + s
+    double calculateBMR() const {
+        return 10 * weight + 6.25 * height - 5 * age + (male ? 5 : -161);
+    }
+
+    // Суточная норма: BMR · K
+    double calculateDailyNorm() const { return calculateBMR() * activity; }
+
+    // Целевой суточный баланс, ккал
+    double targetBalance() const {
+        switch (goal) {
+            case Goal::LoseWeight: return -500;
+            case Goal::GainMass: return 300;
+            default: return 0;
+        }
+    }
+
+    // C(t): калории, полученные с пищей за день
+    double getCaloriesIn(int d) const {
+        double sum = 0;
+        for (const Meal &m: meals) {
+            if (m.getDay() == d) sum += m.getCalories();
+        }
+        return sum;
+    }
+
+    // W(t): калории, потраченные на тренировках за день
+    double getCaloriesWorkout(int d) const {
+        double sum = 0;
+        for (const Workout &w: workouts) {
+            if (w.getDay() == d) sum += w.getCalories();
+        }
+        return sum;
+    }
+};
+
+// Трекер: считает баланс по дням (ассоциация с User, без владения)
+class Tracker {
+    const User &user;
+    double threshold; // допустимое отклонение от цели, ккал
+
+public:
+    Tracker(const User &user, double threshold)
+        : user(user), threshold(threshold) {
+    }
+
+    // D(t) = C(t) − (BMR·K + W(t))
+    vector<double> calculateDailyBalances(int days) const {
+        vector<double> result;
+        for (int d = 1; d <= days; ++d) {
+            double expense = user.calculateDailyNorm() + user.getCaloriesWorkout(d);
+            result.push_back(user.getCaloriesIn(d) - expense);
+        }
+        return result;
+    }
+
+    // S(t) = S(t−1) + D(t)
+    vector<double> calculateAccumulated(int days) const {
+        vector<double> result;
+        double s = 0;
+        for (double dt: calculateDailyBalances(days)) {
+            s += dt;
+            result.push_back(s);
+        }
+        return result;
+    }
+
+    // ΔM ≈ S / 7700
+    double estimateWeightChange(int days) const {
+        vector<double> acc = calculateAccumulated(days);
+        return acc.empty() ? 0 : acc.back() / 7700.0;
+    }
+
+    // Дни, в которых баланс отклонился от цели больше порога
+    vector<int> findWarningDays(int days) const {
+        vector<int> result;
+        vector<double> daily = calculateDailyBalances(days);
+        for (int i = 0; i < (int) daily.size(); ++i) {
+            double deviation = daily[i] - user.targetBalance();
+            if (deviation > threshold || deviation < -threshold) result.push_back(i + 1);
+        }
+        return result;
+    }
+};
+
+int main() {
+    User user("Анна", false, 20, 168, 60, 1.55, Goal::LoseWeight);
+
+    user.addMeal(Meal(1, 450, "Овсянка с бананом", 300, 12, 8, 80));
+    user.addMeal(Meal(1, 700, "Обед", 400, 35, 20, 85));
+    user.addMeal(Meal(1, 500, "Ужин", 350, 30, 15, 50));
+    user.addWorkout(Workout(1, 350, "Бег", 40));
+
+    user.addMeal(Meal(2, 1200, "Фастфуд", 600, 40, 60, 110));
+    user.addMeal(Meal(2, 900, "Пицца", 400, 35, 40, 90));
+
+    user.addMeal(Meal(3, 1400, "Сбалансированный день", 1200, 80, 45, 170));
+    user.addWorkout(Workout(3, 300, "Плавание", 45));
+
+    const int days = 3;
+    Tracker tracker(user, 400);
+
+    cout << "Пользователь: " << user.getName() << endl;
+    cout << "Основной обмен: " << user.calculateBMR() << " ккал" << endl;
+    cout << "Суточная норма: " << user.calculateDailyNorm() << " ккал" << endl;
+
+    vector<double> daily = tracker.calculateDailyBalances(days);
+    vector<double> acc = tracker.calculateAccumulated(days);
+    for (int i = 0; i < days; ++i) {
+        cout << "День " << i + 1 << ": D = " << daily[i] << ", S = " << acc[i] << endl;
+    }
+
+    cout << "Ожидаемое изменение массы: " << tracker.estimateWeightChange(days) << " кг" << endl;
+
+    cout << "Дни с отклонением от цели:";
+    for (int d: tracker.findWarningDays(days)) cout << " " << d;
+    cout << endl;
+
+    return 0;
+}
